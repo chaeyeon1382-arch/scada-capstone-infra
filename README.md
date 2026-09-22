@@ -106,7 +106,8 @@ python main.py
 ## 인프라 / CI-CD
 
 - **Terraform**: `terraform/` 에서 GCP VM을 프로비저닝합니다.
-- **GitHub Actions** (`.github/workflows/deploy.yml`): `main` 브랜치에 push되면 SSH로 GCP VM에 접속해 `git pull` 후 `server`, `ui`의 Docker Compose를 재빌드/재기동합니다.
+- **GitHub Actions** (`.github/workflows/deploy.yml`): 수동 실행(workflow_dispatch) 시 SSH로 GCP VM에 접속해 `git pull` 후 `server`, `ui`의 Docker Compose를 재빌드/재기동합니다.
+- 비용 절감을 위해 GCP VM을 상시 운영하지 않으며, 배포는 필요 시 수동으로 실행합니다.
 
 ## API 요약 (FastAPI)
 
