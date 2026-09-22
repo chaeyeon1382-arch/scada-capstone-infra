@@ -72,7 +72,6 @@ cd gateway
 pip install -r requirements.txt
 python main.py
 ```
-`main.py` 상단의 `CLOUD_IP`, `SENSOR_ID` 등을 환경에 맞게 수정하세요.
 
 ## 인프라 / CI-CD
 
