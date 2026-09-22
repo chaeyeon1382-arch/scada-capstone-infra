@@ -128,23 +128,41 @@ python main.py
 - `server/fastapi/mqtt_client.py`의 `start_mqtt()`에 재시도 로직(최대 10회, 3초 간격)을 추가해 RabbitMQ 기동 지연에 대응
 - GCE VM 배포 스크립트(`terraform/startup.sh`)에서는 `docker compose up -d --build` 실행 후 `sleep 15` 뒤 `docker restart scada-fastapi`로 FastAPI를 재기동시켜 PostgreSQL 초기화 시간을 확보
 
-로컬 개발 환경에서 동일한 증상이 재현되면 컨테이너를 재시작하거나, healthcheck 기반 `depends_on` 조건으로 개선할 여지가 있습니다. [작성 필요]
+로컬 개발 환경에서 동일한 증상이 재현되면 컨테이너를 재시작하거나, healthcheck 기반 `depends_on` 조건으로 개선할 여지가 있습니다.
 </details>
 
 <details>
-<summary>GCE VM에 Docker 설치 실패 (docker.io / docker-compose-v2 패키지 이슈)</summary>
+<summary>80초까지 치솟는 레이턴시 → 슬라이딩 큐로 해결</summary>
 
-초기에는 `apt-get install docker.io docker-compose-v2`로 설치했으나, Debian 12(`debian-cloud/debian-12`) 이미지에서 패키지 버전 문제로 설치가 실패했습니다. Docker 공식 설치 스크립트(`curl -fsSL https://get.docker.com | sh`)로 교체해 Debian/Ubuntu 환경에서 안정적으로 설치되도록 해결했습니다.
+**상황**: 대시보드 통신 로그에서 지연시간이 80초까지 비정상적으로 치솟는 현상 발견
+
+**원인**: 대시보드가 매 폴링마다 과거 데이터 50개를 통째로 요청 → FastAPI/DB에 병목 발생 → 라즈베리파이가 보낸 패킷이 서버 대기열에 갇히는 구조적 문제
+
+**해결**: 폴링 방식을 슬라이딩 큐 로직으로 전환. 최초 1회만 과거 데이터 전체를 조회하고, 이후로는 최신 데이터 1개만 요청. 배열 길이가 50개를 초과하면 가장 오래된 데이터를 `shift`로 제거하는 고정 크기 큐로 구현
+
+**배운 점**: 실시간 시스템에서는 폴링 방식의 데이터 요청 설계 자체가 지연시간에 직접 영향을 줍니다. 증상만 보고 고치는 게 아니라 아키텍처 구조 문제까지 파고들어야 근본 해결이 됩니다.
 </details>
 
 <details>
-<summary>RabbitMQ(MQTT) 자체 서명 TLS 인증서 검증 오류</summary>
+<summary>T3=T2 추상화 → 8.7초 가짜 지연</summary>
 
-게이트웨이 ↔ 서버 통신에 TLS(8883 포트)를 적용하는 과정에서, 자체 서명(self-signed) 인증서를 사용하다 보니 클라이언트 측 인증서 체인 검증이 실패하는 문제가 있었습니다. `mqtt_client_tls.py`에서 `cert_reqs=ssl.CERT_NONE`과 `tls_insecure_set(True)`로 검증을 우회해 테스트 환경에서는 통신이 가능하도록 했습니다. 운영 환경에서는 정식 CA 인증서로 교체하는 것이 필요합니다. [작성 필요 — 정식 인증서 전환 계획]
+**상황**: 슬라이딩 큐 적용 후에도 8.7초의 설명되지 않는 지연이 남아있었음
+
+**원인**: 지연시간 계산 코드에서 서버 수신 시각(T2)과 서버 송신 시각(T3)을 동일한 값으로 처리 → 그 사이의 DB 조회 시간이 통째로 네트워크 지연으로 잘못 누적됨
+
+**해결**: FastAPI `sensor.py`에 `server_send_time = time.time()`을 추가하고, `index.html`에서 T3을 `data.server_send_time * 1000`으로 분리해서 서버 실제 송신 시점을 정확히 측정
+
+**배운 점**: 지연시간을 측정할 땐 서버 내부 처리 시간(Application Delay)과 순수 네트워크 레이턴시를 반드시 분리해야 정확한 값을 얻을 수 있습니다.
 </details>
 
 <details>
-<summary>게이트웨이-서버 간 시간 동기화 (레이턴시 측정)</summary>
+<summary>MQTT TLS 적용 중 발생한 5가지 트러블슈팅</summary>
 
-게이트웨이와 서버의 시스템 시계가 어긋나면 종단 간 지연 시간을 정확히 측정할 수 없어, 게이트웨이 쪽에서 `ntplib`으로 NTP 서버(`time.google.com`) 시각을 받아와 타임스탬프(`t3`, `received_at`)를 찍고, 서버 응답에도 `server_send_time`을 포함시켜 UI에서 구간별 지연을 계산할 수 있도록 했습니다. 정확히 어떤 구간에서 지연이 가장 컸는지, NTP 요청 실패 시 폴백 처리 방식 등 세부 내용은 [작성 필요]
+**상황**: TLS(포트 8883) 적용 과정에서 여러 이슈가 연쇄적으로 발생
+
+**원인**: 인증서 권한(`chmod 644`), `rabbitmq_web_mqtt` 플러그인 충돌, RabbitMQ 3.13 버전 문법 불일치, 1883 포트 충돌, Python TLS 연결 실패(`CERT_NONE`, `PROTOCOL_TLSv1_2` 명시 필요)
+
+**해결**: 각각 권한 수정, 플러그인 정리, 버전별 문법 확인, Docker 재시작, TLS 옵션 명시로 개별 해결
+
+**배운 점**: 보안 기능 하나를 추가하는 데도 파일 권한·플러그인·버전·네트워크·클라이언트 설정 등 여러 레이어가 동시에 얽혀있다는 걸 체감했습니다.
 </details>
