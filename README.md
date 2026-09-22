@@ -52,7 +52,6 @@ scada-capstone/
 ├── server/         # 클라우드 백엔드 (FastAPI + RabbitMQ(MQTT) + PostgreSQL, Docker Compose)
 ├── ui/             # 웹 대시보드 (정적 HTML/JS)
 ├── terraform/      # GCP 인프라 IaC (GCE VM 프로비저닝)
-├── db_api/         # (예정) 별도 DB API - 현재 비어 있음
 └── .github/workflows/deploy.yml  # main 브랜치 push 시 GCP VM에 자동 배포
 ```
 
@@ -103,7 +102,6 @@ cd gateway
 pip install -r requirements.txt
 python main.py
 ```
-`main.py` 상단의 `CLOUD_IP`, `SENSOR_ID` 등을 환경에 맞게 수정하세요.
 
 ## 인프라 / CI-CD
 
