@@ -22,7 +22,6 @@ scada-capstone/
 ├── server/         # 클라우드 백엔드 (FastAPI + RabbitMQ(MQTT) + PostgreSQL, Docker Compose)
 ├── ui/             # 웹 대시보드 (정적 HTML/JS)
 ├── terraform/      # GCP 인프라 IaC (GCE VM 프로비저닝)
-├── db_api/         # (예정) 별도 DB API - 현재 비어 있음
 └── .github/workflows/deploy.yml  # main 브랜치 push 시 GCP VM에 자동 배포
 ```
 
