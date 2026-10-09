@@ -147,3 +147,9 @@ python main.py
 MQTT 통신에 TLS(포트 8883)를 적용하는 과정에서 여러 문제가 연쇄적으로 발생했습니다. 인증서 파일의 권한이 너무 제한적으로 설정되어 RabbitMQ 프로세스가 읽지 못하는 문제가 있어 `chmod 644`로 권한을 조정했고, 기존에 활성화되어 있던 `rabbitmq_web_mqtt` 플러그인이 TLS 리스너와 충돌을 일으켜 비활성화했습니다. 이어서 사용 중인 RabbitMQ 3.13 버전에서 설정 문법이 이전 버전과 달라 인식되지 않는 문제를 문서 확인 후 최신 문법으로 수정했고, TLS용 8883 포트를 열었음에도 기존 1883(non-TLS) 포트와 설정이 겹쳐 충돌하는 부분을 리스너 설정에서 분리했습니다. 마지막으로 게이트웨이 측 Python 코드에서 TLS 연결이 계속 실패했는데, `CERT_NONE`으로 인증서 검증을 명시하고 `PROTOCOL_TLSv1_2`를 직접 지정해야 한다는 걸 확인한 뒤에야 정상적으로 연결이 맺어졌습니다.
 
 </details>
+
+<details> <summary>조직 정책의 키 발급 차단 — Workload Identity Federation으로 전환</summary>
+
+GitHub Actions에서 Terraform을 자동 실행하려면 GCP 인증이 필요했는데, 조직 정책이 서비스 계정 JSON 키 발급을 차단하고 있었습니다. 로컬에서는 ADC(내 계정 권한)로 우회할 수 있었지만, 매번 새로 만들어지는 CI 환경에서는 쓸 수 없는 방법이었습니다. 키 파일은 유출되면 만료 없이 악용되는 장기 자격증명이라 정책이 합리적인 제약이라고 판단했고, 우회하는 대신 키가 필요 없는 Workload Identity Federation으로 구조를 바꿨습니다. GitHub이 워크플로우마다 발급하는 임시 토큰(OIDC)을 GCP가 신뢰하도록 Pool, Provider, 서비스 계정 바인딩을 구성했고, id-token: write 권한으로 토큰을 받아 임시 자격증명으로 Terraform을 실행하게 했습니다. 설정 중에는 Provider 생성 시 INVALID_ARGUMENT가 발생했는데, GitHub용 Provider는 허용할 레포를 제한하는 attribute-condition이 필수였기 때문입니다. 모든 레포가 같은 발급자에서 토큰을 받아 조건이 없으면 다른 사람의 레포 토큰도 통과할 수 있어서, 제 레포만 허용하는 조건을 추가해 해결했습니다. 이어서 임시 토큰 발급에 필요한 IAM Credentials API가 비활성화되어 인증이 실패했고, API를 활성화해 해결했습니다. 그 결과 Terraform 코드를 push하면 키 파일 없이 plan과 apply가 자동으로 실행됩니다.
+
+</details>
